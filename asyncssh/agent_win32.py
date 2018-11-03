@@ -112,12 +112,54 @@ class _PageantTransport:
             self._mapfile = None
 
 
+class _W10OpenSshTransport:
+    """Transport to connect to OpenSSH agent on Windows"""
+
+    def __init__(self):
+        self._agentfile = open(r"\\.\pipe\openssh-ssh-agent", 'r+b', 0)
+
+        self._writing = False
+
+    def write(self, data):
+        """Write request data to OpenSSH agent"""
+
+        if not self._writing:
+            self._agentfile.seek(0)
+            self._writing = True
+
+        self._agentfile.write(data)
+
+    @asyncio.coroutine
+    def readexactly(self, n):
+        """Read response data from OpenSSH agent"""
+
+        if self._writing:
+            self._writing = False
+            self._agentfile.seek(0)
+
+        result = self._agentfile.read(n)
+
+        if len(result) != n:
+            raise asyncio.IncompleteReadError(result, n)
+
+        return result
+
+    def close(self):
+        """Close the connection to OpenSSH"""
+
+        if self._agentfile:
+            self._agentfile.close()
+            self._agentfile = None
+
+
 @asyncio.coroutine
 def open_agent(loop, agent_path):
     """Open a connection to the Pageant agent"""
 
     # pylint: disable=unused-argument
-
-    _find_agent_window()
-    transport = _PageantTransport()
+    try:
+        _find_agent_window()
+        transport = _PageantTransport()
+    except OSError:
+        transport = _W10OpenSshTransport()
     return transport, transport
